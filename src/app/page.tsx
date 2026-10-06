@@ -1,62 +1,108 @@
 'use client'
 
-import { useState } from 'react'
-import { AskForm } from '@/components/AskForm'
-import { CodeSources } from '@/components/CodeSources'
-import { IssueDraftPanel } from '@/components/IssueDraftPanel'
-import { RepoPanel } from '@/components/RepoPanel'
-import { StepTrace } from '@/components/StepTrace'
-import { postJson } from '@/lib/client'
-import type { AgentResult } from '@/types'
+import { useEffect, useRef, useState } from 'react'
+import { Composer } from '@/components/Composer'
+import { MessageView } from '@/components/MessageView'
+import { RepoSidebar } from '@/components/RepoSidebar'
+import { CONTEXT_TURNS, useChat } from '@/lib/useChat'
+
+const STARTERS = [
+  'Give me a tour: what does this project do and how is it organised?',
+  'Where does a request enter the app, and what happens to it?',
+  'Look for a likely bug and draft an issue for it',
+]
+const KEY_STORAGE = 'repo-copilot.admin-key'
 
 export default function Home() {
-  const [repo, setRepo] = useState('')
+  const { repo, messages, busy, ask, clear, selectRepo } = useChat()
   const [adminKey, setAdminKey] = useState('')
-  const [result, setResult] = useState<AgentResult | null>(null)
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [run, setRun] = useState(0)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const end = useRef<HTMLDivElement>(null)
 
-  async function ask(question: string) {
-    setBusy(true)
-    setError('')
-    setResult(null)
+  useEffect(() => {
     try {
-      setResult(await postJson<AgentResult>('/api/agent', { repo, question }))
-      setRun((n) => n + 1)
-    } catch (err) {
-      setError((err as Error).message)
-    } finally {
-      setBusy(false)
-    }
+      setAdminKey(sessionStorage.getItem(KEY_STORAGE) ?? '')
+    } catch {}
+  }, [])
+
+  useEffect(() => {
+    end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  }, [messages])
+
+  function rememberKey(value: string) {
+    setAdminKey(value)
+    try {
+      sessionStorage.setItem(KEY_STORAGE, value)
+    } catch {}
   }
 
+  const remembered = Math.min(CONTEXT_TURNS, messages.filter((m) => m.result).length)
+
   return (
-    <main className='shell'>
-      <aside className='stack'>
-        <div className='panel'>
-          <h1>Repo Copilot</h1>
-          <p className='muted'>
-            Point it at a GitHub repository and ask how something works or what is broken. It answers with
-            file and line references, and drafts issues you can review before posting.
-          </p>
+    <div className='app'>
+      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
+        <div className='brand'>
+          <span className='mark' aria-hidden='true'>{'</>'}</span>
+          <div>
+            <h1>Repo Copilot</h1>
+            <p className='muted small'>A code-reading agent on Groq</p>
+          </div>
         </div>
-        <RepoPanel repo={repo} adminKey={adminKey} onRepoChange={setRepo} onAdminKeyChange={setAdminKey} />
+        <RepoSidebar selected={repo} adminKey={adminKey} onSelect={selectRepo} onAdminKeyChange={rememberKey} />
+        <p className='muted small foot'>
+          The agent searches the code by keywords and meaning, opens files, checks commit history, then answers with
+          file and line references.
+        </p>
       </aside>
 
-      <div className='stack'>
-        <AskForm busy={busy} disabled={!repo.trim()} onAsk={ask} />
-        {error && <p className='panel error'>{error}</p>}
-        {result && (
-          <section className='panel'>
-            <h2>Answer</h2>
-            <p className='answer'>{result.answer}</p>
-          </section>
-        )}
-        {result?.draft && <IssueDraftPanel key={run} draft={result.draft} repo={repo} adminKey={adminKey} />}
-        {result && result.steps.length > 0 && <StepTrace steps={result.steps} />}
-        {result && result.sources.length > 0 && <CodeSources hits={result.sources} />}
-      </div>
-    </main>
+      <main className='chat'>
+        <header className='chat-head'>
+          <button type='button' className='quiet only-narrow' onClick={() => setSidebarOpen((v) => !v)} aria-expanded={sidebarOpen}>
+            Repositories
+          </button>
+          <span className='context'>
+            {repo ? <code className='pill'>{repo}</code> : <span className='muted small'>No repository selected</span>}
+            <span className='muted small wide-only'>
+              {remembered > 0
+                ? `Remembering the last ${remembered} ${remembered === 1 ? 'exchange' : 'exchanges'}`
+                : `Follow-ups use the last ${CONTEXT_TURNS} exchanges`}
+            </span>
+          </span>
+          <button type='button' className='quiet' onClick={clear} disabled={busy || messages.length === 0}>
+            New chat
+          </button>
+        </header>
+
+        <div className='thread'>
+          {messages.length === 0 ? (
+            <div className='empty'>
+              <h2>{repo ? 'What do you want to know or fix?' : 'Pick a repository to start'}</h2>
+              <p className='muted'>
+                {repo
+                  ? 'Ask how something works or what looks broken, then keep going with follow-ups.'
+                  : 'Choose one from the list, or add any public GitHub repository and it will be indexed in about a minute.'}
+              </p>
+              {repo && (
+                <div className='starters'>
+                  {STARTERS.map((text) => (
+                    <button key={text} type='button' className='chip' onClick={() => ask(text)} disabled={busy}>
+                      {text}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            messages.map((message) => <MessageView key={message.id} message={message} adminKey={adminKey} />)
+          )}
+          <div ref={end} />
+        </div>
+
+        <div className='dock'>
+          <Composer busy={busy} disabled={!repo} placeholder={repo ? `Ask about ${repo}…` : 'Select a repository first'} onAsk={ask} />
+          <p className='muted small hint'>Enter to send, Shift+Enter for a new line</p>
+        </div>
+      </main>
+    </div>
   )
 }

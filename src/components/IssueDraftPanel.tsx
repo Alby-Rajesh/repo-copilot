@@ -12,6 +12,7 @@ export function IssueDraftPanel({ draft, repo, adminKey }: Props) {
   const [busy, setBusy] = useState(false)
   const [url, setUrl] = useState('')
   const [error, setError] = useState('')
+  const [copied, setCopied] = useState(false)
 
   async function create() {
     setBusy(true)
@@ -26,23 +27,40 @@ export function IssueDraftPanel({ draft, repo, adminKey }: Props) {
     }
   }
 
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(`${title}\n\n${body}`)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      setError('Copying is blocked in this browser. Select the text and copy it manually.')
+    }
+  }
+
   return (
-    <section className='panel'>
-      <h2>Issue draft</h2>
-      <p className='muted'>Nothing is posted until you create it. Edit freely first.</p>
-      <label htmlFor='issue-title'>Title</label>
-      <input id='issue-title' value={title} onChange={(e) => setTitle(e.target.value)} />
-      <label htmlFor='issue-body'>Body</label>
-      <textarea id='issue-body' className='code' value={body} onChange={(e) => setBody(e.target.value)} />
+    <section className='draft'>
+      <h3>Issue draft</h3>
+      <p className='muted small'>Nothing is posted until someone creates it. Edit freely first.</p>
+      <label htmlFor={`title-${draft.title}`}>Title</label>
+      <input id={`title-${draft.title}`} value={title} onChange={(e) => setTitle(e.target.value)} />
+      <label htmlFor={`body-${draft.title}`}>Body</label>
+      <textarea id={`body-${draft.title}`} className='code' value={body} onChange={(e) => setBody(e.target.value)} />
       <div className='row'>
-        {url ? (
-          <a className='ok' href={url} target='_blank' rel='noreferrer'>Issue created, open on GitHub</a>
-        ) : (
-          <span className='error'>{error}</span>
-        )}
-        <button type='button' className='accent' onClick={create} disabled={busy || Boolean(url)}>
-          {busy ? 'Creating…' : 'Create issue'}
-        </button>
+        <span className='small'>
+          {url ? (
+            <a className='ok' href={url} target='_blank' rel='noreferrer'>Issue created, open on GitHub</a>
+          ) : error ? (
+            <span className='error' role='alert'>{error}</span>
+          ) : (
+            <span className='muted'>{adminKey ? `Posts to ${repo}` : 'Posting needs the admin key (Owner tools)'}</span>
+          )}
+        </span>
+        <span className='actions'>
+          <button type='button' className='quiet' onClick={copy}>{copied ? 'Copied' : 'Copy'}</button>
+          <button type='button' onClick={create} disabled={busy || Boolean(url) || !adminKey}>
+            {busy ? 'Creating…' : 'Create issue'}
+          </button>
+        </span>
       </div>
     </section>
   )

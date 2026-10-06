@@ -35,7 +35,21 @@ export type Step = {
   args: Record<string, unknown>
 }
 
+export type Turn = { question: string; answer: string }
+
+export type RepoSummary = {
+  name: string
+  branch: string
+  files: number
+  chunks: number
+  indexed_at: string
+}
+
+export type RepoList = { repos: RepoSummary[] }
+
 export type AgentResult = {
+  repo: string
+  branch: string
   answer: string
   steps: Step[]
   sources: CodeHit[]
